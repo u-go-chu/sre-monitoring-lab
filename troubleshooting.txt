@@ -1,0 +1,8 @@
+alert
+observe
+check metrics
+check logs
+check kubernetes
+identify root cause
+fix
+verify
