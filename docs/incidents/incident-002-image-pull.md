@@ -1,29 +1,25 @@
-# Incident 001 — API Pod Failure
+# Incident 002 — ImagePullBackOff
 
 ## 1. Alert
 
-**Incident:** API availability temporarily degraded  
-**Time detected:** 2026-10-06 18:30  
+**Incident:** API pod failed to start  
 **Severity:** SEV-2
 
 **Impact:**  
-One API pod was unavailable while Kubernetes created a replacement pod.
+A new API pod could not start because Kubernetes was unable to pull the configured Docker image.
 
 ---
 
 ## 2. Observe
 
-Initial observation:
-
 ```bash
 kubectl get pods
 ```
 
-One pod was in `ContainerCreating` while the other remained `Running`.
+A newly created pod showed:
 
 ```text
-sre-api-5cc75ddf64-mgzs5   0/1   ContainerCreating
-sre-api-5cc75ddf64-wkpp7   1/1   Running
+sre-api-86bc4b9d44-grhjg   0/1   ErrImagePull
 ```
 
 ---
@@ -33,66 +29,71 @@ sre-api-5cc75ddf64-wkpp7   1/1   Running
 The pod was investigated using:
 
 ```bash
-kubectl describe pod sre-api-5cc75ddf64-mgzs5
+kubectl describe pod sre-api-86bc4b9d44-grhjg
 ```
 
-Kubernetes events showed:
+The Kubernetes events indicated that the configured Docker image could not be pulled.
+
+The deployment was checked and the image was found to be:
 
 ```text
-Pulling image "uggoiffi/sre-monitoring-api:latest"
-Successfully pulled image
-Container created
-Container started
+uggoiffi/sre-monitoring-api:wrong
 ```
-
-The Docker image pull took approximately **3 minutes 15 seconds**.
-
-The container itself started successfully.
 
 ---
 
 ## 4. Root Cause
 
-The API pod did not crash.
+The Kubernetes Deployment referenced an invalid Docker image tag.
 
-The temporary degradation was caused by a slow Docker image pull when Kubernetes created the replacement pod.
+The correct image tag was:
+
+```text
+uggoiffi/sre-monitoring-api:latest
+```
 
 ---
 
-## 5. Recovery
+## 5. Fix
 
-No manual fix was required.
-
-Kubernetes automatically created the replacement pod because the Deployment was configured to maintain **2 replicas**.
-
-Final state:
+The image tag was changed from:
 
 ```text
-2/2 pods Running
+wrong
 ```
 
-API health check:
+to:
+
+```text
+latest
+```
+
+The deployment was then reapplied:
 
 ```bash
-curl http://127.0.0.1:31265/health
-```
-
-Result:
-
-```json
-{"status":"healthy"}
+kubectl apply -f k8s/deployment.yaml
 ```
 
 ---
 
 ## 6. Verification
 
-The API was confirmed healthy and both replicas were running.
+```bash
+kubectl get pods
+```
+
+Both API pods returned to:
+
+```text
+1/1 Running
+```
 
 **Incident status:** Resolved
 
+---
+
 ## 7. Lesson Learned
 
-Kubernetes automatically maintained the desired replica count, but slow image pulls can delay recovery when a replacement pod is required.
+An incorrect image name or tag can prevent Kubernetes from starting a pod.
 
-Monitoring pod startup time and image-pull performance can help identify this type of issue.
+When investigating `ErrImagePull` or `ImagePullBackOff`, check the image reference in the Deployment and inspect the pod events for the exact pull error.
